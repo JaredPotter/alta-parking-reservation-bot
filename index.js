@@ -226,8 +226,8 @@ if (isDev) {
         const page = await openChromeAndConnectPuppeteer();
         const reservation = await makeParkingReservation(
             page,
-            "jaredpotter1@gmail.com",
-            "Chaosman37*x",
+            process.env.EMAIL,
+            process.env.PASSWORD,
             "SP16ST8NN",
             "01-02-2023"
         );
@@ -238,11 +238,18 @@ if (!isDev) {
     console.log('SUCCESSFUL START');
 
     // cron.schedule('0,15,30,45 * * * *', async () => {
-    //   // cron.schedule('0,15,30,45 * * * *', async () => {
-    //   console.log('TIME TO RUN');
-    //   const page = await openChromeAndConnectPuppeteer();
-    //   const redditUrl = await uploadFileToRedgifs(page, './redhead.jpg');
+    // cron.schedule('0,15,30,45 * * * *', async () => {
+    console.log('TIME TO RUN');
+    const page = await openChromeAndConnectPuppeteer();
 
-    //   // await closeChrome();
+    const reservation = await makeParkingReservation(
+        page,
+        process.env.EMAIL,
+        process.env.PASSWORD,
+        "SP16ST8NN",
+        "01-02-2023"
+    );
+
+    // await closeChrome();
     // });
 }

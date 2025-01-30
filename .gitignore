@@ -1,3 +1,4 @@
 node_modules
 temp-user-data
 .DS_Store
+.env
