@@ -8,6 +8,16 @@ const axios = require('axios');
 const fs = require('fs-extra');
 const exiftool = require('node-exiftool');
 const exiftoolProcess = new exiftool.ExiftoolProcess();
+const dotenv = require('dotenv');
+dotenv.config();
+const twilio = require("twilio");
+
+const accountSid = process.env.TWILIO_ACCOUNT_SID;
+const authToken = process.env.TWILIO_AUTH_TOKEN;
+const toNumber = process.env.TWILIO_TO_NUMBER;
+const fromNumber = process.env.TWILIO_FROM_NUMBER;
+
+const client = twilio(accountSid, authToken);
 
 const WINDOW_HEIGHT = 1000;
 const WINDOW_WIDTH = 1000;
@@ -104,6 +114,7 @@ async function openChromeAndConnectPuppeteer() {
             chromeLauncher,
             chromeLauncherFlags
         );
+        console.log('wsChromeEndpointUrl', wsChromeEndpointUrl);
     }
 
     if (!wsChromeEndpointUrl) {
@@ -113,18 +124,18 @@ async function openChromeAndConnectPuppeteer() {
 
     const browser = await puppeteer.connect({
         browserWSEndpoint: wsChromeEndpointUrl,
-        defaultViewport: {
-            width: WINDOW_WIDTH,
-            height: WINDOW_HEIGHT,
-        },
+        // defaultViewport: {
+        //     width: WINDOW_WIDTH,
+        //     height: WINDOW_HEIGHT,
+        // },
     });
 
     const page = await browser.newPage();
 
-    await page.setViewport({
-        width: WINDOW_WIDTH,
-        height: WINDOW_HEIGHT,
-    });
+    // await page.setViewport({
+    //     width: WINDOW_WIDTH,
+    //     height: WINDOW_HEIGHT,
+    // });
 
     await sleep(1000);
 
@@ -139,117 +150,185 @@ async function closeChrome() {
     }
 }
 
-async function makeParkingReservation(page, username, password, parkingCode, date) {
-    await page.goto('https://reserve.altaparking.com/login', {
-        waitUntil: 'networkidle0',
+// async function makeParkingReservation(page, username, password, parkingCode, date) {
+//     await page.goto('https://reserve.altaparking.com/login', {
+//         waitUntil: 'networkidle0',
+//     });
+
+//     console.log('blah '.page, username, password, parkingCode, date)
+
+//     const currentPageUrl = await page.url();
+
+//     if (currentPageUrl === "https://reserve.altaparking.com/login") {
+//         await page.waitForSelector('#emailAddress');
+
+//         const emailInputElement = await page.$('#emailAddress');
+//         await emailInputElement.type(username);
+
+//         const passwordInputElement = await page.$('#password');
+//         await passwordInputElement.type(password);
+
+//         const loginButtonElement = await page.$('button[type="submit"]');
+//         await loginButtonElement.click();
+
+//         await sleep(5000);
+//     }
+
+//     // Check if date is already reserved
+//     const momentDate = moment(date, 'MM-DD-YYYY');
+
+//     await page.goto('https://reserve.altaparking.com/parking-reservations', {
+//         waitUntil: 'networkidle0',
+//     });
+
+//     const reservationDateElements = await page.$$('.text-muted');
+
+//     for (const reservationDateElement of reservationDateElements) {
+//         const reservationDate = await reservationDateElement.evaluate(el => el.textContent);
+//         const momentReservationDate = moment(reservationDate, 'MMM D, yyyy');
+
+//         if (momentReservationDate.isSame(momentDate, 'day')) {
+//             console.log('Date Already Reserved! - ' + reservationDate);
+//             return;
+//         }
+//     }
+
+//     // Otherwise Attempt to Make Reservation
+
+//     const redeemParkingCodeElement = reservations[1];
+//     await redeemParkingCodeElement.click();
+
+//     // await page.goto('https://reserve.altaparking.com/parking-codes', {
+//     //     waitUntil: 'networkidle0',
+//     // });
+
+//     // const reserveParkingButtonElement = await page.$('button[type="button"]');
+//     // await reserveParkingButtonElement.click();
+
+//     await page.goto('https://reserve.altaparking.com/select-parking', {
+//         waitUntil: 'networkidle0',
+//     });
+
+//     const formattedDate = momentDate.format('dddd, MMMM D');
+//     const selectorString = `div[aria-label="${formattedDate}"]`;
+//     const calendarDateElement = await page.$(selectorString);
+
+//     await calendarDateElement.click();
+
+//     await sleep(2000);
+//     let pageString = await page.content();
+
+//     if (pageString.includes('<div>Redeem Parking Code</div>')) {
+//         const purchaseOptions = await page.$$('div[class^=Card_card]');
+//         const redeemParkingCodeElement = purchaseOptions[1];
+//         await redeemParkingCodeElement.click();
+
+//         const parkkingCodeInputElement = await page.$('#promoCode');
+//         await parkkingCodeInputElement.type(parkingCode);
+
+//         const submitButtonElement = await page.$('button[type="submit"]');
+//         await submitButtonElement.click();
+//     }
+// }
+
+async function checkParkingAvailability(page, targetDate) {
+    // Create a promise that will resolve when we get the response we want
+    let isWaiting = true;
+
+    page.on('response', async response => {
+        const url = response.url();
+        if (url.includes('platform.honkmobile.com/graphql')) {
+            try {
+                const responseData = await response.json();
+                if (responseData.data?.publicParkingAvailability) {
+                    // Get all dates from the response
+                    const dates = Object.keys(responseData.data.publicParkingAvailability);
+
+                    console.log('targetDate: ', targetDate);
+                    // Find if any date starts with our target date
+                    const matchingDate = dates.find(date => date.startsWith(targetDate));
+
+                    if (matchingDate) {
+                        const dateData = responseData.data.publicParkingAvailability[matchingDate];
+
+                        if (dateData && dateData.status && !dateData.status.sold_out) {
+                            console.log('SUCCESS: Found matching date and parking is available!');
+                            await sendTextMessage(`SUCCESS: Found matching date for ${targetDate} and parking is available!`);
+                            isWaiting = false;
+                        } else {
+                            console.log('Found matching date but parking is sold out.');
+                        }
+                    } else {
+                        console.log('No matching date found.');
+                    }
+                }
+            } catch (error) {
+                console.log('Failed to parse response:', error);
+            }
+        }
     });
 
-    const currentPageUrl = await page.url();
 
-    if (currentPageUrl === "https://reserve.altaparking.com/login") {
-        await page.waitForSelector('#emailAddress');
-
-        const emailInputElement = await page.$('#emailAddress');
-        await emailInputElement.type(username);
-
-        const passwordInputElement = await page.$('#password');
-        await passwordInputElement.type(password);
-
-        const loginButtonElement = await page.$('button[type="submit"]');
-        await loginButtonElement.click();
+    while (isWaiting) {
+        console.log('refreshing page...');
+        await page.goto('https://reserve.altaparking.com/select-parking', {
+            waitUntil: 'networkidle0',
+        });
 
         await sleep(5000);
     }
+}
 
-    // Check if date is already reserved
-    const momentDate = moment(date, 'MM-DD-YYYY');
-
-    await page.goto('https://reserve.altaparking.com/parking-reservations', {
-        waitUntil: 'networkidle0',
+async function sendTextMessage(message) {
+    await client.messages.create({
+        from: fromNumber,
+        to: toNumber,
+        contentVariables: JSON.stringify({
+            1: message
+        }),
+        contentSid: 'HXb5b62575e6e4ff6129ad7c8efe1f983e',
     });
-
-    const reservationDateElements = await page.$$('.text-muted');
-
-    for (const reservationDateElement of reservationDateElements) {
-        const reservationDate = await reservationDateElement.evaluate(el => el.textContent);
-        const momentReservationDate = moment(reservationDate, 'MMM D, yyyy');
-
-        if (momentReservationDate.isSame(momentDate, 'day')) {
-            console.log('Date Already Reserved! - ' + reservationDate);
-            return;
-        }
-    }
-
-    // Otherwise Attempt to Make Reservation
-
-    const redeemParkingCodeElement = reservations[1];
-    await redeemParkingCodeElement.click();
-
-    await page.goto('https://reserve.altaparking.com/parking-codes', {
-        waitUntil: 'networkidle0',
-    });
-
-    // const reserveParkingButtonElement = await page.$('button[type="button"]');
-    // await reserveParkingButtonElement.click();
-
-    await page.goto('https://reserve.altaparking.com/select-parking', {
-        waitUntil: 'networkidle0',
-    });
-
-    const formattedDate = momentDate.format('dddd, MMMM D');
-    const selectorString = `div[aria-label="${formattedDate}"]`;
-    const calendarDateElement = await page.$(selectorString);
-
-    await calendarDateElement.click();
-
-    await sleep(2000);
-    let pageString = await page.content();
-
-    if (pageString.includes('<div>Redeem Parking Code</div>')) {
-        const purchaseOptions = await page.$$('div[class^=Card_card]');
-        const redeemParkingCodeElement = purchaseOptions[1];
-        await redeemParkingCodeElement.click();
-
-        const parkkingCodeInputElement = await page.$('#promoCode');
-        await parkkingCodeInputElement.type(parkingCode);
-
-        const submitButtonElement = await page.$('button[type="submit"]');
-        await submitButtonElement.click();
-    }
 }
 
 // DEV ONLY
-const isDev = process.argv[2];
+const targetDate = process.argv[2];
 
-if (isDev) {
+if (targetDate) {
     (async () => {
+        const targetDate = process.argv[2];
+
+        if (!isValidDateFormat(targetDate)) {
+            console.log('Invalid date format. Please use YYYY-MM-DD format. Ex. 2025-02-17');
+            return;
+        }
+
         const page = await openChromeAndConnectPuppeteer();
-        const reservation = await makeParkingReservation(
-            page,
-            process.env.EMAIL,
-            process.env.PASSWORD,
-            "SP16ST8NN",
-            "01-02-2023"
-        );
+        await checkParkingAvailability(page, targetDate)
     })();
 }
 
-if (!isDev) {
+if (!targetDate) {
     console.log('SUCCESSFUL START');
 
     // cron.schedule('0,15,30,45 * * * *', async () => {
     // cron.schedule('0,15,30,45 * * * *', async () => {
     console.log('TIME TO RUN');
-    const page = await openChromeAndConnectPuppeteer();
+    // const page = await openChromeAndConnectPuppeteer();
 
-    const reservation = await makeParkingReservation(
-        page,
-        process.env.EMAIL,
-        process.env.PASSWORD,
-        "SP16ST8NN",
-        "01-02-2023"
-    );
+    // const reservation = await makeParkingReservation(
+    //     page,
+    //     process.env.EMAIL,
+    //     process.env.PASSWORD,
+    //     "SP16ST8NN",
+    //     "01-02-2023"
+    // );
 
     // await closeChrome();
     // });
+}
+
+function isValidDateFormat(dateString) {
+    // Regular expression to match YYYY-MM-DD format
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    return dateRegex.test(dateString);
 }
