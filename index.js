@@ -76,6 +76,9 @@ async function sleep(ms) {
 
 async function openChromeAndConnectPuppeteer() {
     let wsChromeEndpointUrl = '';
+    let port = 9222;
+
+
 
     if (process.platform === 'win32') {
         console.log('Running on Windows');
@@ -86,7 +89,7 @@ async function openChromeAndConnectPuppeteer() {
         chromeLauncher = 'start';
         chromeLauncherFlags = [
             'chrome.exe',
-            '--remote-debugging-port=9222',
+            `--remote-debugging-port=${port}`,
             '--no-first-run',
             '--no-default-browser-check',
             `--window-size=${WINDOW_WIDTH},${WINDOW_HEIGHT}`,
@@ -101,7 +104,7 @@ async function openChromeAndConnectPuppeteer() {
         spawnSync('killall', [`Google Chrome`]);
         chromeLauncher = `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`;
         chromeLauncherFlags = [
-            '--remote-debugging-port=9222',
+            `--remote-debugging-port=${port}`,
             '--no-first-run',
             '--no-default-browser-check',
             `--window-size=${WINDOW_WIDTH},${WINDOW_HEIGHT}`,
@@ -271,9 +274,13 @@ async function checkParkingAvailability(page, targetDate) {
 
     while (isWaiting) {
         console.log('refreshing page...');
-        await page.goto('https://reserve.altaparking.com/select-parking', {
-            waitUntil: 'networkidle0',
-        });
+        try {
+            await page.goto('https://reserve.altaparking.com/select-parking', {
+                waitUntil: 'networkidle0',
+            });
+        } catch (error) {
+            // do nothing
+        }
 
         await sleep(5000);
     }
@@ -301,6 +308,8 @@ if (targetDate) {
             console.log('Invalid date format. Please use YYYY-MM-DD format. Ex. 2025-02-17');
             return;
         }
+
+        await sendTextMessage(`Starting to look for parking on ${targetDate}!`);
 
         const page = await openChromeAndConnectPuppeteer();
         await checkParkingAvailability(page, targetDate)
